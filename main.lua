@@ -11,10 +11,16 @@ local Camera = workspace.CurrentCamera
 local Settings = {
     LockEnabled = false,
     LockDistance = 5, -- 作動距離（スタッド）
+    LockDistanceLeft = 5, -- 左方向の距離
+    LockDistanceRight = 5, -- 右方向の距離
+    LockDistanceFront = 5, -- 前方向の距離
+    LockDistanceBack = 5, -- 後方向の距離
     LockDuration = 0.5, -- 固定時間（秒）
     CooldownTime = 1, -- 再作動までの時間（秒）
     TraceEnabled = false,
-    TraceThickness = 1 -- Traceの太さ
+    TraceThickness = 1, -- Traceの太さ
+    NameESPEnabled = false,
+    TargetPlayer = nil -- 固定する特定のプレイヤー
 }
 
 -- 状態管理
@@ -22,7 +28,9 @@ local isLocking = false
 local lastLockTime = 0
 local lockConnection = nil
 local traceConnections = {}
+local nameESPConnections = {}
 local currentTarget = nil
+local playerDropdown = nil
 
 -- Rayfield ウィンドウの作成
 local Window = Rayfield:CreateWindow({
@@ -42,17 +50,81 @@ local MainTab = Window:CreateTab("Main", 4483362458)
 -- 設定タブ
 local SettingsTab = Window:CreateTab("Settings", 4483345998)
 
+-- プレイヤーリストを取得する関数
+local function GetPlayerList()
+    local playerList = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(playerList, player.Name)
+        end
+    end
+    return playerList
+end
+
+-- 方向による距離チェック関数
+local function IsWithinDirectionalDistance(localPos, enemyPos, localLook)
+    local offset = enemyPos - localPos
+    local distance = offset.Magnitude
+    
+    -- 全体の距離チェック
+    if distance > Settings.LockDistance then
+        return false
+    end
+    
+    -- 方向ベクトル
+    local right = localLook:Cross(Vector3.new(0, 1, 0)).Unit
+    local forward = localLook
+    
+    -- 各方向の距離を計算
+    local rightDist = math.abs(offset:Dot(right))
+    local forwardDist = offset:Dot(forward)
+    
+    -- 左右チェック
+    if offset:Dot(right) > 0 then -- 右側
+        if rightDist > Settings.LockDistanceRight then return false end
+    else -- 左側
+        if rightDist > Settings.LockDistanceLeft then return false end
+    end
+    
+    -- 前後チェック
+    if forwardDist > 0 then -- 前方
+        if forwardDist > Settings.LockDistanceFront then return false end
+    else -- 後方
+        if math.abs(forwardDist) > Settings.LockDistanceBack then return false end
+    end
+    
+    return true
+end
+
 -- 最も近い敵を取得する関数
 local function GetClosestEnemy()
     local closestPlayer = nil
     local shortestDistance = math.huge
     
+    -- 特定のプレイヤーが設定されている場合
+    if Settings.TargetPlayer and Settings.TargetPlayer ~= "None" then
+        local targetPlayer = Players:FindFirstChild(Settings.TargetPlayer)
+        if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") and targetPlayer.Character:FindFirstChild("Head") then
+            local humanoid = targetPlayer.Character:FindFirstChild("Humanoid")
+            if humanoid and humanoid.Health > 0 and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local distance = (LocalPlayer.Character.HumanoidRootPart.Position - targetPlayer.Character.HumanoidRootPart.Position).Magnitude
+                local lookVector = LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector
+                if IsWithinDirectionalDistance(LocalPlayer.Character.HumanoidRootPart.Position, targetPlayer.Character.HumanoidRootPart.Position, lookVector) then
+                    return targetPlayer, distance
+                end
+            end
+        end
+        return nil, math.huge
+    end
+    
+    -- 最も近い敵を探す
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Head") then
             local humanoid = player.Character:FindFirstChild("Humanoid")
-            if humanoid and humanoid.Health > 0 then
+            if humanoid and humanoid.Health > 0 and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                 local distance = (LocalPlayer.Character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
-                if distance < shortestDistance then
+                local lookVector = LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector
+                if IsWithinDirectionalDistance(LocalPlayer.Character.HumanoidRootPart.Position, player.Character.HumanoidRootPart.Position, lookVector) and distance < shortestDistance then
                     shortestDistance = distance
                     closestPlayer = player
                 end
@@ -95,7 +167,8 @@ local function LockToHead()
             -- 設定距離以上離れたら自動解除
             if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                 local currentDistance = (LocalPlayer.Character.HumanoidRootPart.Position - currentTarget.Character.HumanoidRootPart.Position).Magnitude
-                if currentDistance > Settings.LockDistance then
+                local lookVector = LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector
+                if currentDistance > Settings.LockDistance or not IsWithinDirectionalDistance(LocalPlayer.Character.HumanoidRootPart.Position, currentTarget.Character.HumanoidRootPart.Position, lookVector) then
                     lockConnection:Disconnect()
                     isLocking = false
                     currentTarget = nil
@@ -114,6 +187,47 @@ local function LockToHead()
             Camera.CFrame = CFrame.new(Camera.CFrame.Position, currentTarget.Character.Head.Position)
         end)
     end
+end
+
+-- Name ESPを作成する関数
+local function CreateNameESP(player)
+    if not player.Character or not player.Character:FindFirstChild("Head") then return end
+    
+    local nameTag = Drawing.new("Text")
+    nameTag.Visible = false
+    nameTag.Center = true
+    nameTag.Outline = true
+    nameTag.Font = 2
+    nameTag.Size = 16
+    nameTag.Color = Color3.new(1, 1, 1)
+    
+    local connection
+    connection = RunService.RenderStepped:Connect(function()
+        if not Settings.NameESPEnabled then
+            nameTag.Visible = false
+            return
+        end
+        
+        if player.Character and player.Character:FindFirstChild("Head") then
+            local humanoid = player.Character:FindFirstChild("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                local pos, onScreen = Camera:WorldToViewportPoint(player.Character.Head.Position + Vector3.new(0, 1, 0))
+                if onScreen then
+                    nameTag.Position = Vector2.new(pos.X, pos.Y)
+                    nameTag.Text = player.Name
+                    nameTag.Visible = true
+                else
+                    nameTag.Visible = false
+                end
+            else
+                nameTag.Visible = false
+            end
+        else
+            nameTag.Visible = false
+        end
+    end)
+    
+    nameESPConnections[player] = {nameTag = nameTag, connection = connection}
 end
 
 -- Traceを作成する関数
@@ -157,19 +271,25 @@ local function CreateTrace(player)
     traceConnections[player] = {trace = trace, connection = connection}
 end
 
--- プレイヤー追加時のTrace作成
-local function SetupTraces()
+-- プレイヤー追加時の処理
+local function SetupPlayer(player)
+    if player ~= LocalPlayer then
+        CreateTrace(player)
+        CreateNameESP(player)
+    end
+end
+
+local function SetupAllPlayers()
     for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            CreateTrace(player)
-        end
+        SetupPlayer(player)
     end
 end
 
 Players.PlayerAdded:Connect(function(player)
-    if player ~= LocalPlayer then
-        task.wait(1)
-        CreateTrace(player)
+    task.wait(1)
+    SetupPlayer(player)
+    if playerDropdown then
+        playerDropdown:Refresh(GetPlayerList(), true)
     end
 end)
 
@@ -178,6 +298,14 @@ Players.PlayerRemoving:Connect(function(player)
         traceConnections[player].connection:Disconnect()
         traceConnections[player].trace:Remove()
         traceConnections[player] = nil
+    end
+    if nameESPConnections[player] then
+        nameESPConnections[player].connection:Disconnect()
+        nameESPConnections[player].nameTag:Remove()
+        nameESPConnections[player] = nil
+    end
+    if playerDropdown then
+        playerDropdown:Refresh(GetPlayerList(), true)
     end
 end)
 
@@ -193,6 +321,15 @@ local LockToggle = MainTab:CreateToggle({
 
 MainTab:CreateSection("ESP")
 
+local NameESPToggle = MainTab:CreateToggle({
+    Name = "Name ESP",
+    CurrentValue = false,
+    Flag = "NameESPToggle",
+    Callback = function(Value)
+        Settings.NameESPEnabled = Value
+    end,
+})
+
 local TraceToggle = MainTab:CreateToggle({
     Name = "Trace (Ultra Thin Red)",
     CurrentValue = false,
@@ -203,10 +340,40 @@ local TraceToggle = MainTab:CreateToggle({
 })
 
 -- 設定タブ
-SettingsTab:CreateSection("Lock Settings")
+SettingsTab:CreateSection("Target Settings")
+
+playerDropdown = SettingsTab:CreateDropdown({
+    Name = "Target Player",
+    Options = {"None"},
+    CurrentOption = {"None"},
+    MultipleOptions = false,
+    Flag = "TargetPlayerDropdown",
+    Callback = function(Option)
+        if Option[1] == "None" then
+            Settings.TargetPlayer = nil
+        else
+            Settings.TargetPlayer = Option[1]
+        end
+    end,
+})
+
+-- プレイヤーリストを更新
+task.spawn(function()
+    while task.wait(2) do
+        if playerDropdown then
+            local currentList = {"None"}
+            for _, name in ipairs(GetPlayerList()) do
+                table.insert(currentList, name)
+            end
+            playerDropdown:Refresh(currentList, true)
+        end
+    end
+end)
+
+SettingsTab:CreateSection("Lock Distance Settings")
 
 local LockDistanceSlider = SettingsTab:CreateSlider({
-    Name = "Lock Distance (Studs)",
+    Name = "Overall Distance (Studs)",
     Range = {5, 25},
     Increment = 1,
     CurrentValue = 5,
@@ -215,6 +382,52 @@ local LockDistanceSlider = SettingsTab:CreateSlider({
         Settings.LockDistance = Value
     end,
 })
+
+local LockDistanceFrontSlider = SettingsTab:CreateSlider({
+    Name = "Front Distance (Studs)",
+    Range = {5, 25},
+    Increment = 1,
+    CurrentValue = 5,
+    Flag = "LockDistanceFrontSlider",
+    Callback = function(Value)
+        Settings.LockDistanceFront = Value
+    end,
+})
+
+local LockDistanceBackSlider = SettingsTab:CreateSlider({
+    Name = "Back Distance (Studs)",
+    Range = {5, 25},
+    Increment = 1,
+    CurrentValue = 5,
+    Flag = "LockDistanceBackSlider",
+    Callback = function(Value)
+        Settings.LockDistanceBack = Value
+    end,
+})
+
+local LockDistanceLeftSlider = SettingsTab:CreateSlider({
+    Name = "Left Distance (Studs)",
+    Range = {5, 25},
+    Increment = 1,
+    CurrentValue = 5,
+    Flag = "LockDistanceLeftSlider",
+    Callback = function(Value)
+        Settings.LockDistanceLeft = Value
+    end,
+})
+
+local LockDistanceRightSlider = SettingsTab:CreateSlider({
+    Name = "Right Distance (Studs)",
+    Range = {5, 25},
+    Increment = 1,
+    CurrentValue = 5,
+    Flag = "LockDistanceRightSlider",
+    Callback = function(Value)
+        Settings.LockDistanceRight = Value
+    end,
+})
+
+SettingsTab:CreateSection("Lock Timing Settings")
 
 local LockDurationSlider = SettingsTab:CreateSlider({
     Name = "Lock Duration (Seconds)",
@@ -256,7 +469,7 @@ RunService.RenderStepped:Connect(function()
     LockToHead()
 end)
 
--- Trace初期化
-SetupTraces()
+-- 初期化
+SetupAllPlayers()
 
 Rayfield:LoadConfiguration()
