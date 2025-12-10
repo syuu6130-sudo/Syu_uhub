@@ -39,7 +39,7 @@ local wallCheckPassed = false
 -- Rayfield ウィンドウの作成
 local Window = Rayfield:CreateWindow({
     Name = "Syu_uhub",
-    LoadingTitle = "Syu_uhub Loading",
+    LoadingTitle = "Syu_uhub ロード中",
     LoadingSubtitle = "by Syu",
     ConfigurationSaving = {
         Enabled = true,
@@ -48,11 +48,11 @@ local Window = Rayfield:CreateWindow({
     }
 })
 
--- Mainタブ
-local MainTab = Window:CreateTab("Main", 4483362458)
+-- メインタブ
+local MainTab = Window:CreateTab("メイン", 4483362458)
 
 -- 設定タブ
-local SettingsTab = Window:CreateTab("Settings", 4483345998)
+local SettingsTab = Window:CreateTab("設定", 4483345998)
 
 -- プレイヤーリストを取得する関数
 local function GetPlayerList()
@@ -133,7 +133,7 @@ local function GetClosestEnemy()
     local shortestDistance = math.huge
     
     -- 特定のプレイヤーが設定されている場合
-    if Settings.TargetPlayer and Settings.TargetPlayer ~= "None" then
+    if Settings.TargetPlayer and Settings.TargetPlayer ~= "なし" then
         local targetPlayer = Players:FindFirstChild(Settings.TargetPlayer)
         if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") and targetPlayer.Character:FindFirstChild("Head") then
             local humanoid = targetPlayer.Character:FindFirstChild("Humanoid")
@@ -420,9 +420,9 @@ Players.PlayerRemoving:Connect(function(player)
     end
 end)
 
--- Mainタブの機能
+-- メインタブの機能
 local LockToggle = MainTab:CreateToggle({
-    Name = "Head Lock",
+    Name = "ヘッドロック",
     CurrentValue = false,
     Flag = "HeadLockToggle",
     Callback = function(Value)
@@ -433,7 +433,7 @@ local LockToggle = MainTab:CreateToggle({
 MainTab:CreateSection("ESP")
 
 local NameESPToggle = MainTab:CreateToggle({
-    Name = "Name ESP",
+    Name = "ネームESP",
     CurrentValue = false,
     Flag = "NameESPToggle",
     Callback = function(Value)
@@ -442,7 +442,7 @@ local NameESPToggle = MainTab:CreateToggle({
 })
 
 local TraceToggle = MainTab:CreateToggle({
-    Name = "Trace (Ultra Thin Red)",
+    Name = "トレース（超薄赤線）",
     CurrentValue = false,
     Flag = "TraceToggle",
     Callback = function(Value)
@@ -451,16 +451,16 @@ local TraceToggle = MainTab:CreateToggle({
 })
 
 -- 設定タブ
-SettingsTab:CreateSection("Target Settings")
+SettingsTab:CreateSection("ターゲット設定")
 
 playerDropdown = SettingsTab:CreateDropdown({
-    Name = "Target Player",
-    Options = {"None"},
-    CurrentOption = {"None"},
+    Name = "ターゲットプレイヤー",
+    Options = {"なし"},
+    CurrentOption = {"なし"},
     MultipleOptions = false,
     Flag = "TargetPlayerDropdown",
     Callback = function(Option)
-        if Option[1] == "None" then
+        if Option[1] == "なし" then
             Settings.TargetPlayer = nil
         else
             Settings.TargetPlayer = Option[1]
@@ -472,7 +472,7 @@ playerDropdown = SettingsTab:CreateDropdown({
 task.spawn(function()
     while task.wait(2) do
         if playerDropdown then
-            local currentList = {"None"}
+            local currentList = {"なし"}
             for _, name in ipairs(GetPlayerList()) do
                 table.insert(currentList, name)
             end
@@ -481,10 +481,10 @@ task.spawn(function()
     end
 end)
 
-SettingsTab:CreateSection("Lock Distance Settings")
+SettingsTab:CreateSection("ロック距離設定")
 
 local LockDistanceSlider = SettingsTab:CreateSlider({
-    Name = "Overall Distance (Studs)",
+    Name = "全体距離（スタッド）",
     Range = {5, 25},
     Increment = 1,
     CurrentValue = 5,
@@ -495,7 +495,7 @@ local LockDistanceSlider = SettingsTab:CreateSlider({
 })
 
 local LockDistanceFrontSlider = SettingsTab:CreateSlider({
-    Name = "Front Distance (Studs)",
+    Name = "前方距離（スタッド）",
     Range = {5, 25},
     Increment = 1,
     CurrentValue = 5,
@@ -506,7 +506,7 @@ local LockDistanceFrontSlider = SettingsTab:CreateSlider({
 })
 
 local LockDistanceBackSlider = SettingsTab:CreateSlider({
-    Name = "Back Distance (Studs)",
+    Name = "後方距離（スタッド）",
     Range = {5, 25},
     Increment = 1,
     CurrentValue = 5,
@@ -517,7 +517,7 @@ local LockDistanceBackSlider = SettingsTab:CreateSlider({
 })
 
 local LockDistanceLeftSlider = SettingsTab:CreateSlider({
-    Name = "Left Distance (Studs)",
+    Name = "左方向距離（スタッド）",
     Range = {5, 25},
     Increment = 1,
     CurrentValue = 5,
@@ -528,7 +528,7 @@ local LockDistanceLeftSlider = SettingsTab:CreateSlider({
 })
 
 local LockDistanceRightSlider = SettingsTab:CreateSlider({
-    Name = "Right Distance (Studs)",
+    Name = "右方向距離（スタッド）",
     Range = {5, 25},
     Increment = 1,
     CurrentValue = 5,
@@ -538,10 +538,10 @@ local LockDistanceRightSlider = SettingsTab:CreateSlider({
     end,
 })
 
-SettingsTab:CreateSection("Lock Timing Settings")
+SettingsTab:CreateSection("ロックタイミング設定")
 
 local WallCheckToggle = SettingsTab:CreateToggle({
-    Name = "Wall Check",
+    Name = "壁判定",
     CurrentValue = true,
     Flag = "WallCheckToggle",
     Callback = function(Value)
@@ -550,7 +550,7 @@ local WallCheckToggle = SettingsTab:CreateToggle({
 })
 
 local WallCheckDelaySlider = SettingsTab:CreateSlider({
-    Name = "Wall Check Delay (Seconds)",
+    Name = "壁判定遅延（秒）",
     Range = {0, 2},
     Increment = 0.1,
     CurrentValue = 0,
@@ -561,7 +561,7 @@ local WallCheckDelaySlider = SettingsTab:CreateSlider({
 })
 
 local LockDurationSlider = SettingsTab:CreateSlider({
-    Name = "Lock Duration (Seconds)",
+    Name = "ロック持続時間（秒）",
     Range = {0.1, 3},
     Increment = 0.1,
     CurrentValue = 0.5,
@@ -572,7 +572,7 @@ local LockDurationSlider = SettingsTab:CreateSlider({
 })
 
 local CooldownSlider = SettingsTab:CreateSlider({
-    Name = "Cooldown Time (Seconds)",
+    Name = "クールダウン時間（秒）",
     Range = {0.1, 5},
     Increment = 0.1,
     CurrentValue = 1,
@@ -582,10 +582,10 @@ local CooldownSlider = SettingsTab:CreateSlider({
     end,
 })
 
-SettingsTab:CreateSection("Trace Settings")
+SettingsTab:CreateSection("トレース設定")
 
 local TraceThicknessSlider = SettingsTab:CreateSlider({
-    Name = "Trace Thickness",
+    Name = "トレースの太さ",
     Range = {1, 10},
     Increment = 1,
     CurrentValue = 1,
