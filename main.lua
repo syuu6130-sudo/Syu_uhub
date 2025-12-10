@@ -20,7 +20,9 @@ local Settings = {
     TraceEnabled = false,
     TraceThickness = 1, -- Traceの太さ
     NameESPEnabled = false,
-    TargetPlayer = nil -- 固定する特定のプレイヤー
+    TargetPlayer = nil, -- 固定する特定のプレイヤー
+    WallCheckEnabled = true, -- 壁判定の有効/無効
+    WallCheckDelay = 0 -- 壁判定の遅延（秒）
 }
 
 -- 状態管理
@@ -31,6 +33,8 @@ local traceConnections = {}
 local nameESPConnections = {}
 local currentTarget = nil
 local playerDropdown = nil
+local wallCheckStartTime = 0
+local wallCheckPassed = false
 
 -- Rayfield ウィンドウの作成
 local Window = Rayfield:CreateWindow({
@@ -59,6 +63,33 @@ local function GetPlayerList()
         end
     end
     return playerList
+end
+
+-- 壁判定関数
+local function CheckWallBetween(startPos, endPos)
+    if not Settings.WallCheckEnabled then
+        return false -- 壁判定無効なら常に壁なし
+    end
+    
+    local direction = (endPos - startPos).Unit
+    local distance = (endPos - startPos).Magnitude
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+    
+    local raycastResult = workspace:Raycast(startPos, direction * distance, raycastParams)
+    
+    if raycastResult then
+        -- 敵のキャラクターに当たった場合は壁なしとみなす
+        local hitPlayer = Players:GetPlayerFromCharacter(raycastResult.Instance.Parent)
+        if hitPlayer and hitPlayer ~= LocalPlayer then
+            return false
+        end
+        return true -- 壁あり
+    end
+    
+    return false -- 壁なし
 end
 
 -- 方向による距離チェック関数
@@ -110,11 +141,17 @@ local function GetClosestEnemy()
                 local distance = (LocalPlayer.Character.HumanoidRootPart.Position - targetPlayer.Character.HumanoidRootPart.Position).Magnitude
                 local lookVector = LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector
                 if IsWithinDirectionalDistance(LocalPlayer.Character.HumanoidRootPart.Position, targetPlayer.Character.HumanoidRootPart.Position, lookVector) then
-                    return targetPlayer, distance
+                    -- 壁判定
+                    local hasWall = CheckWallBetween(LocalPlayer.Character.HumanoidRootPart.Position, targetPlayer.Character.Head.Position)
+                    if not hasWall then
+                        return targetPlayer, distance, false
+                    else
+                        return targetPlayer, distance, true
+                    end
                 end
             end
         end
-        return nil, math.huge
+        return nil, math.huge, false
     end
     
     -- 最も近い敵を探す
@@ -125,14 +162,18 @@ local function GetClosestEnemy()
                 local distance = (LocalPlayer.Character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
                 local lookVector = LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector
                 if IsWithinDirectionalDistance(LocalPlayer.Character.HumanoidRootPart.Position, player.Character.HumanoidRootPart.Position, lookVector) and distance < shortestDistance then
-                    shortestDistance = distance
-                    closestPlayer = player
+                    -- 壁判定
+                    local hasWall = CheckWallBetween(LocalPlayer.Character.HumanoidRootPart.Position, player.Character.Head.Position)
+                    if not hasWall then
+                        shortestDistance = distance
+                        closestPlayer = player
+                    end
                 end
             end
         end
     end
     
-    return closestPlayer, shortestDistance
+    return closestPlayer, shortestDistance, false
 end
 
 -- 頭に視点を固定する関数
@@ -144,48 +185,118 @@ local function LockToHead()
     if currentTime - lastLockTime < Settings.CooldownTime then return end
     if isLocking then return end
     
-    local enemy, distance = GetClosestEnemy()
+    local enemy, distance, hasWall = GetClosestEnemy()
     
     if enemy and distance <= Settings.LockDistance then
-        isLocking = true
-        currentTarget = enemy
-        lastLockTime = currentTime
-        local lockStartTime = currentTime
-        
-        if lockConnection then
-            lockConnection:Disconnect()
-        end
-        
-        lockConnection = RunService.RenderStepped:Connect(function()
-            if not Settings.LockEnabled or not currentTarget or not currentTarget.Character or not currentTarget.Character:FindFirstChild("Head") then
+        -- 壁判定が無効の場合は即ロック
+        if not Settings.WallCheckEnabled then
+            isLocking = true
+            currentTarget = enemy
+            lastLockTime = currentTime
+            local lockStartTime = currentTime
+            
+            if lockConnection then
                 lockConnection:Disconnect()
-                isLocking = false
-                currentTarget = nil
-                return
             end
             
-            -- 設定距離以上離れたら自動解除
-            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                local currentDistance = (LocalPlayer.Character.HumanoidRootPart.Position - currentTarget.Character.HumanoidRootPart.Position).Magnitude
-                local lookVector = LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector
-                if currentDistance > Settings.LockDistance or not IsWithinDirectionalDistance(LocalPlayer.Character.HumanoidRootPart.Position, currentTarget.Character.HumanoidRootPart.Position, lookVector) then
+            lockConnection = RunService.RenderStepped:Connect(function()
+                if not Settings.LockEnabled or not currentTarget or not currentTarget.Character or not currentTarget.Character:FindFirstChild("Head") then
                     lockConnection:Disconnect()
                     isLocking = false
                     currentTarget = nil
                     return
                 end
+                
+                -- 設定距離以上離れたら自動解除
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    local currentDistance = (LocalPlayer.Character.HumanoidRootPart.Position - currentTarget.Character.HumanoidRootPart.Position).Magnitude
+                    local lookVector = LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector
+                    if currentDistance > Settings.LockDistance or not IsWithinDirectionalDistance(LocalPlayer.Character.HumanoidRootPart.Position, currentTarget.Character.HumanoidRootPart.Position, lookVector) then
+                        lockConnection:Disconnect()
+                        isLocking = false
+                        currentTarget = nil
+                        return
+                    end
+                end
+                
+                -- 固定時間経過で解除
+                if tick() - lockStartTime >= Settings.LockDuration then
+                    lockConnection:Disconnect()
+                    isLocking = false
+                    currentTarget = nil
+                    return
+                end
+                
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, currentTarget.Character.Head.Position)
+            end)
+        else
+            -- 壁判定が有効の場合は遅延処理
+            if not hasWall then
+                -- 壁なしの場合、遅延時間経過後にロック
+                if wallCheckStartTime == 0 then
+                    wallCheckStartTime = currentTime
+                end
+                
+                if currentTime - wallCheckStartTime >= Settings.WallCheckDelay then
+                    isLocking = true
+                    currentTarget = enemy
+                    lastLockTime = currentTime
+                    wallCheckStartTime = 0
+                    local lockStartTime = currentTime
+                    
+                    if lockConnection then
+                        lockConnection:Disconnect()
+                    end
+                    
+                    lockConnection = RunService.RenderStepped:Connect(function()
+                        if not Settings.LockEnabled or not currentTarget or not currentTarget.Character or not currentTarget.Character:FindFirstChild("Head") then
+                            lockConnection:Disconnect()
+                            isLocking = false
+                            currentTarget = nil
+                            return
+                        end
+                        
+                        -- 設定距離以上離れたら自動解除
+                        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                            local currentDistance = (LocalPlayer.Character.HumanoidRootPart.Position - currentTarget.Character.HumanoidRootPart.Position).Magnitude
+                            local lookVector = LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector
+                            if currentDistance > Settings.LockDistance or not IsWithinDirectionalDistance(LocalPlayer.Character.HumanoidRootPart.Position, currentTarget.Character.HumanoidRootPart.Position, lookVector) then
+                                lockConnection:Disconnect()
+                                isLocking = false
+                                currentTarget = nil
+                                return
+                            end
+                            
+                            -- ロック中に壁ができた場合は解除
+                            if Settings.WallCheckEnabled then
+                                local wallCheck = CheckWallBetween(LocalPlayer.Character.HumanoidRootPart.Position, currentTarget.Character.Head.Position)
+                                if wallCheck then
+                                    lockConnection:Disconnect()
+                                    isLocking = false
+                                    currentTarget = nil
+                                    return
+                                end
+                            end
+                        end
+                        
+                        -- 固定時間経過で解除
+                        if tick() - lockStartTime >= Settings.LockDuration then
+                            lockConnection:Disconnect()
+                            isLocking = false
+                            currentTarget = nil
+                            return
+                        end
+                        
+                        Camera.CFrame = CFrame.new(Camera.CFrame.Position, currentTarget.Character.Head.Position)
+                    end)
+                end
+            else
+                -- 壁がある場合はタイマーリセット
+                wallCheckStartTime = 0
             end
-            
-            -- 固定時間経過で解除
-            if tick() - lockStartTime >= Settings.LockDuration then
-                lockConnection:Disconnect()
-                isLocking = false
-                currentTarget = nil
-                return
-            end
-            
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, currentTarget.Character.Head.Position)
-        end)
+        end
+    else
+        wallCheckStartTime = 0
     end
 end
 
@@ -428,6 +539,26 @@ local LockDistanceRightSlider = SettingsTab:CreateSlider({
 })
 
 SettingsTab:CreateSection("Lock Timing Settings")
+
+local WallCheckToggle = SettingsTab:CreateToggle({
+    Name = "Wall Check",
+    CurrentValue = true,
+    Flag = "WallCheckToggle",
+    Callback = function(Value)
+        Settings.WallCheckEnabled = Value
+    end,
+})
+
+local WallCheckDelaySlider = SettingsTab:CreateSlider({
+    Name = "Wall Check Delay (Seconds)",
+    Range = {0, 2},
+    Increment = 0.1,
+    CurrentValue = 0,
+    Flag = "WallCheckDelaySlider",
+    Callback = function(Value)
+        Settings.WallCheckDelay = Value
+    end,
+})
 
 local LockDurationSlider = SettingsTab:CreateSlider({
     Name = "Lock Duration (Seconds)",
