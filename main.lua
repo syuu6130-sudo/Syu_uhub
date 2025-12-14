@@ -1,41 +1,38 @@
 --==================================================
 -- Syu_uhub fling things and people top script
--- 完成統合版 / 日本語UI
 --==================================================
 
--- Rayfield 読み込み
+-- Rayfield
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 -- Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-
+local UIS = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
---==================================================
+--====================
 -- 設定
---==================================================
+--====================
 local Settings = {
-
-    -- 固定（ヘッドロック）
+    -- メイン
     LockEnabled = false,
-    LockDuration = 0.5,
     CooldownTime = 1,
+    LockDuration = 0.5,
 
-    -- 距離 ON / OFF
+    -- 距離（ON/OFF）
     UseGlobalDistance = false,
-    UseFrontDistance = false,
-    UseBackDistance = false,
-    UseLeftDistance = false,
-    UseRightDistance = false,
+    UseFrontDistance  = false,
+    UseBackDistance   = false,
+    UseLeftDistance   = false,
+    UseRightDistance  = false,
 
     LockDistance = 5,
     LockDistanceFront = 5,
-    LockDistanceBack = 5,
-    LockDistanceLeft = 5,
+    LockDistanceBack  = 5,
+    LockDistanceLeft  = 5,
     LockDistanceRight = 5,
 
     -- 壁判定
@@ -44,15 +41,7 @@ local Settings = {
 
     -- スムーズ
     SmoothLockEnabled = false,
-    SmoothLockSpeed = 0.1, -- 0〜1（0.001可）
-
-    -- ターゲット
-    TargetPlayer = nil,
-    TargetPlayerID = nil,
-    LockPriority = "Closest",
-
-    -- 通知
-    NotificationEnabled = false,
+    SmoothLockSpeed = 0.1, -- 0～1
 
     -- トレース
     TraceEnabled = false,
@@ -73,23 +62,31 @@ local Settings = {
     HealthESPMode = "横", -- 横 / 縦
 
     BoxESPEnabled = false,
-    BoxESPColor = Color3.fromRGB(0,255,0),
+    BoxESPColor = Color3.new(0,1,0),
     BoxESPScale = 1,
     BoxESPFullBody = false,
+
+    -- ターゲット
+    TargetPlayer = nil,
+    TargetPlayerID = nil,
+
+    -- その他
+    NotificationEnabled = false,
+    ResetOnDeath = true,
 }
 
---==================================================
+--====================
 -- 状態
---==================================================
+--====================
 local isLocking = false
+local lastLockTime = 0
 local lockConnection
 local currentTarget
-local lastLockTime = 0
 local lockStartTime = 0
 
---==================================================
--- Rayfield Window
---==================================================
+--====================
+-- ウィンドウ
+--====================
 local Window = Rayfield:CreateWindow({
     Name = "Syu_uhub fling things and people top script",
     LoadingTitle = "Syu_uhub fling things and people top script",
@@ -97,20 +94,11 @@ local Window = Rayfield:CreateWindow({
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "SyuHub",
-        FileName = "MainConfig"
+        FileName = "SyuHubConfig"
     }
 })
 
---==================================================
--- タブ
---==================================================
-local MainTab = Window:CreateTab("固定", 4483362458)
-local SettingsTab = Window:CreateTab("設定", 4483345998)
-local InfoTab = Window:CreateTab("情報", 4483345998)
-
---==================================================
--- Rayfield 最小化テキスト変更
---==================================================
+-- 最小化表示名変更
 task.spawn(function()
     task.wait(1)
     for _, v in pairs(game:GetService("CoreGui"):GetDescendants()) do
@@ -120,35 +108,87 @@ task.spawn(function()
     end
 end)
 
---==================================================
--- 固定ロジック
---==================================================
-local function GetBestTarget()
-    local best
-    local bestDist = math.huge
+--====================
+-- タブ
+--====================
+local MainTab = Window:CreateTab("メイン", 4483362458)
+local SettingsTab = Window:CreateTab("設定", 4483345998)
+local InfoTab = Window:CreateTab("情報", 4483345998)
 
+--====================
+-- 補助関数
+--====================
+local function GetPlayerList()
+    local t = {}
     for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") then
-            local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-            if hrp and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                local dist = (LocalPlayer.Character.HumanoidRootPart.Position - hrp.Position).Magnitude
-                if dist < bestDist then
-                    bestDist = dist
-                    best = p
+        if p ~= LocalPlayer then table.insert(t, p.Name) end
+    end
+    return t
+end
+
+local function CheckWall(a, b)
+    if not Settings.WallCheckEnabled then return false end
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {LocalPlayer.Character}
+    local r = workspace:Raycast(a, (b-a), params)
+    return r ~= nil
+end
+
+local function DistanceCheck(localPos, enemyPos, look)
+    local offset = enemyPos - localPos
+    if Settings.UseGlobalDistance and offset.Magnitude > Settings.LockDistance then
+        return false
+    end
+
+    local right = look:Cross(Vector3.new(0,1,0)).Unit
+    local forward = look
+
+    local r = offset:Dot(right)
+    local f = offset:Dot(forward)
+
+    if Settings.UseRightDistance and r > 0 and math.abs(r) > Settings.LockDistanceRight then return false end
+    if Settings.UseLeftDistance  and r < 0 and math.abs(r) > Settings.LockDistanceLeft  then return false end
+    if Settings.UseFrontDistance and f > 0 and f > Settings.LockDistanceFront then return false end
+    if Settings.UseBackDistance  and f < 0 and math.abs(f) > Settings.LockDistanceBack then return false end
+
+    return true
+end
+
+--====================
+-- ロック処理
+--====================
+local function SmoothLook(pos)
+    TweenService:Create(
+        Camera,
+        TweenInfo.new(Settings.SmoothLockSpeed, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+        {CFrame = CFrame.new(Camera.CFrame.Position, pos)}
+    ):Play()
+end
+
+local function FindTarget()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChild("HumanoidRootPart") then
+            local h = p.Character:FindFirstChild("Humanoid")
+            if h and h.Health > 0 then
+                local lp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if lp then
+                    if DistanceCheck(lp.Position, p.Character.HumanoidRootPart.Position, lp.CFrame.LookVector) then
+                        if not CheckWall(lp.Position, p.Character.Head.Position) then
+                            return p
+                        end
+                    end
                 end
             end
         end
     end
-
-    return best, bestDist
 end
 
-local function LockUpdate()
-    if not Settings.LockEnabled then return end
-    if isLocking then return end
+RunService.RenderStepped:Connect(function()
+    if not Settings.LockEnabled or isLocking then return end
     if tick() - lastLockTime < Settings.CooldownTime then return end
 
-    local target, dist = GetBestTarget()
+    local target = FindTarget()
     if not target then return end
 
     isLocking = true
@@ -157,130 +197,112 @@ local function LockUpdate()
     lockStartTime = tick()
 
     lockConnection = RunService.RenderStepped:Connect(function()
-        if not currentTarget or not currentTarget.Character or not currentTarget.Character:FindFirstChild("Head") then
-            lockConnection:Disconnect()
+        if not Settings.LockEnabled or not currentTarget or not currentTarget.Character then
             isLocking = false
+            lockConnection:Disconnect()
             return
         end
 
         if tick() - lockStartTime >= Settings.LockDuration then
-            lockConnection:Disconnect()
             isLocking = false
+            lockConnection:Disconnect()
             return
         end
 
-        local headPos = currentTarget.Character.Head.Position
-        if Settings.SmoothLockEnabled then
-            local cf = CFrame.new(Camera.CFrame.Position, headPos)
-            Camera.CFrame = Camera.CFrame:Lerp(cf, Settings.SmoothLockSpeed)
-        else
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, headPos)
+        local head = currentTarget.Character:FindFirstChild("Head")
+        if head then
+            if Settings.SmoothLockEnabled then
+                SmoothLook(head.Position)
+            else
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, head.Position)
+            end
         end
     end)
-end
+end)
 
-RunService.RenderStepped:Connect(LockUpdate)
-
---==================================================
--- UI : メイン
---==================================================
+--====================
+-- メインUI
+--====================
 MainTab:CreateToggle({
-    Name = "固定（ヘッドロック）",
+    Name = "固定",
     CurrentValue = false,
     Callback = function(v)
         Settings.LockEnabled = v
     end
 })
 
-MainTab:CreateButton({
-    Name = "固定リセット",
-    Callback = function()
-        if lockConnection then lockConnection:Disconnect() end
-        isLocking = false
-        currentTarget = nil
+MainTab:CreateSection("ターゲット")
+
+local playerDropdown = MainTab:CreateDropdown({
+    Name = "プレイヤー選択",
+    Options = {"なし"},
+    CurrentOption = {"なし"},
+    Callback = function(opt)
+        if opt[1] == "なし" then
+            Settings.TargetPlayer = nil
+        else
+            Settings.TargetPlayer = opt[1]
+        end
     end
 })
 
---==================================================
--- UI : 設定
---==================================================
-SettingsTab:CreateSection("距離設定（ONにしないと有効になりません）")
-
-SettingsTab:CreateToggle({
-    Name = "全体距離を使用",
-    Callback = function(v) Settings.UseGlobalDistance = v end
-})
-
-SettingsTab:CreateSlider({
-    Name = "全体距離",
-    Range = {0,100},
-    Increment = 0.1,
-    CurrentValue = 5,
-    Callback = function(v) Settings.LockDistance = v end
-})
-
-SettingsTab:CreateInput({
-    Name = "全体距離（直接入力）",
-    PlaceholderText = "例: 7.25",
-    Callback = function(v)
-        Settings.LockDistance = tonumber(v) or Settings.LockDistance
+MainTab:CreateInput({
+    Name = "プレイヤーID指定",
+    PlaceholderText = "UserId",
+    Callback = function(t)
+        Settings.TargetPlayerID = tonumber(t)
     end
+})
+
+local serverList = MainTab:CreateLabel("サーバープレイヤー:")
+task.spawn(function()
+    while task.wait(2) do
+        local txt = "サーバープレイヤー:\n"
+        for _, p in pairs(Players:GetPlayers()) do
+            txt ..= "- "..p.Name.."\n"
+        end
+        serverList:SetText(txt)
+        playerDropdown:Refresh((function()
+            local o = {"なし"}
+            for _, n in ipairs(GetPlayerList()) do table.insert(o, n) end
+            return o
+        end)(), false)
+    end
+end)
+
+--====================
+-- 設定UI（要点）
+--====================
+SettingsTab:CreateSection("距離設定（ON/OFF＋入力）")
+
+SettingsTab:CreateToggle({Name="全体距離を使用", Callback=function(v) Settings.UseGlobalDistance=v end})
+SettingsTab:CreateSlider({Name="全体距離", Range={0,100}, Increment=0.1, CurrentValue=5, Callback=function(v) Settings.LockDistance=v end})
+SettingsTab:CreateInput({Name="全体距離（直接入力）", PlaceholderText="数値", Callback=function(v) Settings.LockDistance=tonumber(v) or Settings.LockDistance end})
+
+SettingsTab:CreateSection("壁判定")
+SettingsTab:CreateToggle({Name="壁判定", CurrentValue=true, Callback=function(v) Settings.WallCheckEnabled=v end})
+SettingsTab:CreateSlider({Name="ロック接続時間（秒）", Range={0,5}, Increment=0.1, CurrentValue=0, Callback=function(v) Settings.WallCheckDelay=v end})
+SettingsTab:CreateParagraph({
+    Title="詳細",
+    Content="0秒：即ロック\n設定秒数：壁が無い状態が続いた後にロック\n途中で壁が出るとリセット"
 })
 
 SettingsTab:CreateSection("スムーズロック")
+SettingsTab:CreateToggle({Name="スムーズロック", Callback=function(v) Settings.SmoothLockEnabled=v end})
+SettingsTab:CreateSlider({Name="速度", Range={0,1}, Increment=0.001, CurrentValue=0.1, Callback=function(v) Settings.SmoothLockSpeed=v end})
+SettingsTab:CreateInput({Name="速度（直接入力）", PlaceholderText="0～1", Callback=function(v) Settings.SmoothLockSpeed=math.max(0, tonumber(v) or 0) end})
 
-SettingsTab:CreateToggle({
-    Name = "スムーズロック有効",
-    Callback = function(v) Settings.SmoothLockEnabled = v end
-})
+SettingsTab:CreateSection("トレース")
+SettingsTab:CreateToggle({Name="トレース有効", Callback=function(v) Settings.TraceEnabled=v end})
+SettingsTab:CreateSlider({Name="太さ", Range={1,10}, Increment=1, CurrentValue=1, Callback=function(v) Settings.TraceThickness=v end})
+SettingsTab:CreateSlider({Name="薄さ", Range={0,1}, Increment=0.01, CurrentValue=0.05, Callback=function(v) Settings.TraceTransparency=v end})
+SettingsTab:CreateColorPicker({Name="色", Color=Settings.TraceColor, Callback=function(c) Settings.TraceColor=c end})
+SettingsTab:CreateDropdown({Name="形", Options={"Line","Dot"}, CurrentOption={"Line"}, Callback=function(o) Settings.TraceShape=o[1] end})
 
-SettingsTab:CreateSlider({
-    Name = "スムーズ速度",
-    Range = {0,1},
-    Increment = 0.001,
-    CurrentValue = 0.1,
-    Callback = function(v) Settings.SmoothLockSpeed = v end
-})
-
-SettingsTab:CreateInput({
-    Name = "スムーズ速度（直接入力）",
-    PlaceholderText = "0 ～ 1",
-    Callback = function(v)
-        Settings.SmoothLockSpeed = math.max(0, tonumber(v) or 0)
-    end
-})
-
-SettingsTab:CreateSection("壁判定")
-
-SettingsTab:CreateToggle({
-    Name = "壁判定",
-    CurrentValue = true,
-    Callback = function(v) Settings.WallCheckEnabled = v end
-})
-
-SettingsTab:CreateSlider({
-    Name = "ロック接続時間（秒）",
-    Range = {0,5},
-    Increment = 0.1,
-    CurrentValue = 0,
-    Callback = function(v) Settings.WallCheckDelay = v end
-})
-
-SettingsTab:CreateParagraph({
-    Title = "壁判定の説明",
-    Content =
-        "0秒 : 即ロック\n" ..
-        "0.5秒以上 : 壁が無い状態がその秒数続いたらロック\n" ..
-        "途中で壁が出たらカウントはリセットされます"
-})
-
---==================================================
+--====================
 -- 情報
---==================================================
-InfoTab:CreateLabel("UI名 : Syu_uhub")
-InfoTab:CreateLabel("用途 : 学習・研究用")
+--====================
+InfoTab:CreateLabel("UI名：Syu_uhub fling things and people top script")
+InfoTab:CreateLabel("すべて日本語対応")
 
---==================================================
--- 初期化
---==================================================
 Rayfield:LoadConfiguration()
