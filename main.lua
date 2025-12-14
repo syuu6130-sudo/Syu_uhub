@@ -12,32 +12,51 @@ local Camera = workspace.CurrentCamera
 -- 設定値
 local Settings = {
     LockEnabled = false,
-    LockDistance = 5, -- 作動距離（スタッド）
-    LockDistanceLeft = 5, -- 左方向の距離
-    LockDistanceRight = 5, -- 右方向の距離
-    LockDistanceFront = 5, -- 前方向の距離
-    LockDistanceBack = 5, -- 後方向の距離
-    LockDuration = 0.5, -- 固定時間（秒）
-    CooldownTime = 1, -- 再作動までの時間（秒）
+    LockDistanceEnabled = false,
+    LockDistance = 5,
+    LockDistanceLeftEnabled = false,
+    LockDistanceLeft = 5,
+    LockDistanceRightEnabled = false,
+    LockDistanceRight = 5,
+    LockDistanceFrontEnabled = false,
+    LockDistanceFront = 5,
+    LockDistanceBackEnabled = false,
+    LockDistanceBack = 5,
+    LockDuration = 0.5,
+    CooldownTime = 1,
     TraceEnabled = false,
-    TraceThickness = 1, -- Traceの太さ
-    TraceColor = Color3.fromRGB(255, 50, 50), -- 赤色
+    TraceThickness = 1,
+    TraceTransparency = 0.1,
+    TraceSize = 1,
+    TraceColor = Color3.fromRGB(255, 50, 50),
+    TraceShape = "Line", -- "Line", "Circle", "Square"
     NameESPEnabled = false,
+    NameESPFont = 2,
+    NameESPColor = Color3.fromRGB(255, 255, 255),
+    NameESPSize = 16,
+    NameESPTransparency = 0,
+    NameESPPosition = "AboveHead", -- "AboveHead", "OnHead"
     HealthESPEnabled = false,
+    HealthESPStyle = "Horizontal", -- "Horizontal", "Vertical"
+    HealthESPColor = Color3.fromRGB(0, 255, 0),
+    HealthESPSize = 14,
     BoxESPEnabled = false,
-    TargetPlayer = nil, -- 固定する特定のプレイヤー
-    TargetPlayerID = nil, -- プレイヤーIDで指定
-    WallCheckEnabled = true, -- 壁判定の有効/無効
-    WallCheckDelay = 0, -- 壁判定の遅延（秒）
-    SmoothLockEnabled = false, -- スムーズロック
-    SmoothLockSpeed = 0.1, -- スムーズロック速度
-    NotificationEnabled = true, -- 通知
-    AutoUpdateTarget = true, -- ターゲット自動更新
-    ShowLockIndicator = true, -- ロックインジケーター表示
-    LockSoundEnabled = true, -- ロック音
-    UnlockSoundEnabled = true, -- アンロック音
-    ResetOnDeath = true, -- 死亡時リセット
-    LockPriority = "Closest" -- "Closest", "LowestHealth", "Random"
+    BoxESPColor = Color3.fromRGB(0, 255, 0),
+    BoxESPThickness = 1,
+    BoxESPStyle = "Normal", -- "Normal", "FullBody"
+    TargetPlayer = nil,
+    TargetPlayerID = nil,
+    WallCheckEnabled = true,
+    WallCheckDelay = 0,
+    SmoothLockEnabled = false,
+    SmoothLockSpeed = 0.1,
+    NotificationEnabled = false,
+    AutoUpdateTarget = true,
+    ShowLockIndicator = true,
+    LockSoundEnabled = true,
+    UnlockSoundEnabled = true,
+    ResetOnDeath = true,
+    LockPriority = "Closest"
 }
 
 -- 状態管理
@@ -58,20 +77,20 @@ local lockIndicator = nil
 
 -- 音声設定
 local lockSound = Instance.new("Sound")
-lockSound.SoundId = "rbxassetid://9128736210" -- ロック音
+lockSound.SoundId = "rbxassetid://9128736210"
 lockSound.Volume = 0.5
 lockSound.Parent = workspace
 
 local unlockSound = Instance.new("Sound")
-unlockSound.SoundId = "rbxassetid://9128736804" -- アンロック音
+unlockSound.SoundId = "rbxassetid://9128736804"
 unlockSound.Volume = 0.5
 unlockSound.Parent = workspace
 
 -- Rayfield ウィンドウの作成
 local Window = Rayfield:CreateWindow({
-    Name = "Syu_uhub",
+    Name = "Syu_uhub fling things and people top script",
     LoadingTitle = "Syu_uhub ロード中",
-    LoadingSubtitle = "by Syu - 強力ヘッドロックシステム",
+    LoadingSubtitle = "by Syu - fling things and people top script",
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "SyuHub",
@@ -79,9 +98,17 @@ local Window = Rayfield:CreateWindow({
     },
     Discord = {
         Enabled = false,
-        Invite = "noinvitelink", -- Discord招待リンク
+        Invite = "noinvitelink",
         RememberJoins = true
     }
+})
+
+-- UIタイトル変更
+Rayfield.Notify({
+    Title = "Syu_uhub UI",
+    Content = "UIがロードされました",
+    Duration = 3,
+    Image = 4483362458
 })
 
 -- メインタブ
@@ -89,6 +116,9 @@ local MainTab = Window:CreateTab("メイン", 4483362458)
 
 -- 設定タブ
 local SettingsTab = Window:CreateTab("設定", 4483345998)
+
+-- ESP設定タブ
+local ESPTab = Window:CreateTab("ESP設定", 4483345998)
 
 -- 情報タブ
 local InfoTab = Window:CreateTab("情報", 4483345998)
@@ -160,7 +190,7 @@ end
 -- 壁判定関数
 local function CheckWallBetween(startPos, endPos)
     if not Settings.WallCheckEnabled then
-        return false -- 壁判定無効なら常に壁なし
+        return false
     end
     
     local direction = (endPos - startPos).Unit
@@ -174,7 +204,6 @@ local function CheckWallBetween(startPos, endPos)
     local raycastResult = workspace:Raycast(startPos, direction * distance, raycastParams)
     
     if raycastResult then
-        -- 敵のキャラクターに当たった場合は壁なしとみなす
         local hitModel = raycastResult.Instance
         while hitModel and hitModel ~= workspace do
             local hitPlayer = Players:GetPlayerFromCharacter(hitModel)
@@ -183,10 +212,10 @@ local function CheckWallBetween(startPos, endPos)
             end
             hitModel = hitModel.Parent
         end
-        return true -- 壁あり
+        return true
     end
     
-    return false -- 壁なし
+    return false
 end
 
 -- 方向による距離チェック関数
@@ -194,8 +223,8 @@ local function IsWithinDirectionalDistance(localPos, enemyPos, localLook)
     local offset = enemyPos - localPos
     local distance = offset.Magnitude
     
-    -- 全体の距離チェック
-    if distance > Settings.LockDistance then
+    -- 全体距離チェック
+    if Settings.LockDistanceEnabled and distance > Settings.LockDistance then
         return false
     end
     
@@ -209,16 +238,24 @@ local function IsWithinDirectionalDistance(localPos, enemyPos, localLook)
     
     -- 左右チェック
     if offset:Dot(right) > 0 then -- 右側
-        if rightDist > Settings.LockDistanceRight then return false end
+        if Settings.LockDistanceRightEnabled and rightDist > Settings.LockDistanceRight then
+            return false
+        end
     else -- 左側
-        if rightDist > Settings.LockDistanceLeft then return false end
+        if Settings.LockDistanceLeftEnabled and rightDist > Settings.LockDistanceLeft then
+            return false
+        end
     end
     
     -- 前後チェック
     if forwardDist > 0 then -- 前方
-        if forwardDist > Settings.LockDistanceFront then return false end
+        if Settings.LockDistanceFrontEnabled and forwardDist > Settings.LockDistanceFront then
+            return false
+        end
     else -- 後方
-        if math.abs(forwardDist) > Settings.LockDistanceBack then return false end
+        if Settings.LockDistanceBackEnabled and math.abs(forwardDist) > Settings.LockDistanceBack then
+            return false
+        end
     end
     
     return true
@@ -239,11 +276,11 @@ end
 local function CalculateTargetPriority(player, distance)
     if Settings.LockPriority == "LowestHealth" then
         local health, maxHealth = GetPlayerHealth(player)
-        return health / maxHealth -- 健康率が低いほど優先度高
+        return health / maxHealth
     elseif Settings.LockPriority == "Random" then
         return math.random()
     else -- "Closest"
-        return 1 / (distance + 1) -- 距離が近いほど優先度高
+        return 1 / (distance + 1)
     end
 end
 
@@ -362,7 +399,7 @@ local function LockToHead()
     
     local enemy, distance, hasWall = GetBestEnemy()
     
-    if enemy and distance <= Settings.LockDistance then
+    if enemy and (not Settings.LockDistanceEnabled or distance <= Settings.LockDistance) then
         -- ロックインジケーター更新
         if Settings.ShowLockIndicator and lockIndicator and enemy.Character and enemy.Character:FindFirstChild("Head") then
             lockIndicator.Adornee = enemy.Character.Head
@@ -415,7 +452,7 @@ local function LockToHead()
                 if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                     local currentDistance = (LocalPlayer.Character.HumanoidRootPart.Position - currentTarget.Character.HumanoidRootPart.Position).Magnitude
                     local lookVector = LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector
-                    if currentDistance > Settings.LockDistance or not IsWithinDirectionalDistance(LocalPlayer.Character.HumanoidRootPart.Position, currentTarget.Character.HumanoidRootPart.Position, lookVector) then
+                    if (Settings.LockDistanceEnabled and currentDistance > Settings.LockDistance) or not IsWithinDirectionalDistance(LocalPlayer.Character.HumanoidRootPart.Position, currentTarget.Character.HumanoidRootPart.Position, lookVector) then
                         lockConnection:Disconnect()
                         isLocking = false
                         currentTarget = nil
@@ -512,7 +549,7 @@ local function LockToHead()
                         if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                             local currentDistance = (LocalPlayer.Character.HumanoidRootPart.Position - currentTarget.Character.HumanoidRootPart.Position).Magnitude
                             local lookVector = LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector
-                            if currentDistance > Settings.LockDistance or not IsWithinDirectionalDistance(LocalPlayer.Character.HumanoidRootPart.Position, currentTarget.Character.HumanoidRootPart.Position, lookVector) then
+                            if (Settings.LockDistanceEnabled and currentDistance > Settings.LockDistance) or not IsWithinDirectionalDistance(LocalPlayer.Character.HumanoidRootPart.Position, currentTarget.Character.HumanoidRootPart.Position, lookVector) then
                                 lockConnection:Disconnect()
                                 isLocking = false
                                 currentTarget = nil
@@ -608,9 +645,10 @@ local function CreateNameESP(player)
     nameTag.Visible = false
     nameTag.Center = true
     nameTag.Outline = true
-    nameTag.Font = 2
-    nameTag.Size = 16
-    nameTag.Color = Color3.new(1, 1, 1)
+    nameTag.Font = Settings.NameESPFont
+    nameTag.Size = Settings.NameESPSize
+    nameTag.Color = Settings.NameESPColor
+    nameTag.Transparency = Settings.NameESPTransparency
     
     local connection
     connection = RunService.RenderStepped:Connect(function()
@@ -622,7 +660,12 @@ local function CreateNameESP(player)
         if player.Character and player.Character:FindFirstChild("Head") then
             local humanoid = player.Character:FindFirstChild("Humanoid")
             if humanoid and humanoid.Health > 0 then
-                local pos, onScreen = Camera:WorldToViewportPoint(player.Character.Head.Position + Vector3.new(0, 1, 0))
+                local offset = Vector3.new(0, 1.5, 0)
+                if Settings.NameESPPosition == "OnHead" then
+                    offset = Vector3.new(0, 0.5, 0)
+                end
+                
+                local pos, onScreen = Camera:WorldToViewportPoint(player.Character.Head.Position + offset)
                 if onScreen then
                     nameTag.Position = Vector2.new(pos.X, pos.Y)
                     nameTag.Text = player.Name
@@ -649,14 +692,14 @@ local function CreateHealthESP(player)
     local healthText = Drawing.new("Text")
     
     healthBar.Visible = false
-    healthBar.Color = Color3.new(0, 1, 0)
+    healthBar.Color = Settings.HealthESPColor
     healthBar.Thickness = 2
     
     healthText.Visible = false
     healthText.Center = true
     healthText.Outline = true
     healthText.Font = 2
-    healthText.Size = 14
+    healthText.Size = Settings.HealthESPSize
     healthText.Color = Color3.new(1, 1, 1)
     
     local connection
@@ -670,25 +713,50 @@ local function CreateHealthESP(player)
         if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
             local humanoid = player.Character:FindFirstChild("Humanoid")
             if humanoid and humanoid.Health > 0 then
-                local pos, onScreen = Camera:WorldToViewportPoint(player.Character.HumanoidRootPart.Position + Vector3.new(0, 2, 0))
+                local pos, onScreen = Camera:WorldToViewportPoint(player.Character.HumanoidRootPart.Position)
                 if onScreen then
                     local healthPercent = humanoid.Health / humanoid.MaxHealth
-                    local barLength = 50
-                    local filledLength = barLength * healthPercent
                     
-                    healthBar.From = Vector2.new(pos.X - barLength/2, pos.Y + 20)
-                    healthBar.To = Vector2.new(pos.X - barLength/2 + filledLength, pos.Y + 20)
-                    
-                    if healthPercent > 0.5 then
-                        healthBar.Color = Color3.new(0, 1, 0)
-                    elseif healthPercent > 0.25 then
-                        healthBar.Color = Color3.new(1, 1, 0)
-                    else
-                        healthBar.Color = Color3.new(1, 0, 0)
+                    if Settings.HealthESPStyle == "Horizontal" then
+                        -- 横型: 名前の上に表示
+                        local barLength = 50
+                        local filledLength = barLength * healthPercent
+                        local yOffset = -30 -- 名前の上に表示
+                        
+                        healthBar.From = Vector2.new(pos.X - barLength/2, pos.Y + yOffset)
+                        healthBar.To = Vector2.new(pos.X - barLength/2 + filledLength, pos.Y + yOffset)
+                        
+                        if healthPercent > 0.5 then
+                            healthBar.Color = Color3.new(0, 1, 0)
+                        elseif healthPercent > 0.25 then
+                            healthBar.Color = Color3.new(1, 1, 0)
+                        else
+                            healthBar.Color = Color3.new(1, 0, 0)
+                        end
+                        
+                        healthText.Position = Vector2.new(pos.X, pos.Y + yOffset - 15)
+                        healthText.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
+                        
+                    else -- Vertical
+                        -- 縦型: キャラクターの横に表示
+                        local barHeight = 50
+                        local filledHeight = barHeight * healthPercent
+                        local xOffset = 40 -- キャラクターの右側
+                        
+                        healthBar.From = Vector2.new(pos.X + xOffset, pos.Y + barHeight/2)
+                        healthBar.To = Vector2.new(pos.X + xOffset, pos.Y + barHeight/2 - filledHeight)
+                        
+                        if healthPercent > 0.5 then
+                            healthBar.Color = Color3.new(0, 1, 0)
+                        elseif healthPercent > 0.25 then
+                            healthBar.Color = Color3.new(1, 1, 0)
+                        else
+                            healthBar.Color = Color3.new(1, 0, 0)
+                        end
+                        
+                        healthText.Position = Vector2.new(pos.X + xOffset + 15, pos.Y)
+                        healthText.Text = math.floor(humanoid.Health)
                     end
-                    
-                    healthText.Position = Vector2.new(pos.X, pos.Y + 25)
-                    healthText.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
                     
                     healthBar.Visible = true
                     healthText.Visible = true
@@ -715,8 +783,8 @@ local function CreateBoxESP(player)
     
     local box = Drawing.new("Square")
     box.Visible = false
-    box.Color = Color3.new(0, 1, 0)
-    box.Thickness = 1
+    box.Color = Settings.BoxESPColor
+    box.Thickness = Settings.BoxESPThickness
     box.Filled = false
     
     local connection
@@ -730,14 +798,37 @@ local function CreateBoxESP(player)
             local humanoid = player.Character:FindFirstChild("Humanoid")
             if humanoid and humanoid.Health > 0 then
                 local rootPos, onScreen = Camera:WorldToViewportPoint(player.Character.HumanoidRootPart.Position)
-                local headPos = Camera:WorldToViewportPoint(player.Character.Head.Position)
                 
                 if onScreen then
-                    local height = math.abs(headPos.Y - rootPos.Y) * 1.5
-                    local width = height * 0.6
+                    if Settings.BoxESPStyle == "Normal" then
+                        -- 通常ボックス
+                        local headPos = Camera:WorldToViewportPoint(player.Character.Head.Position)
+                        local height = math.abs(headPos.Y - rootPos.Y) * 1.5
+                        local width = height * 0.6
+                        
+                        box.Size = Vector2.new(width, height)
+                        box.Position = Vector2.new(rootPos.X - width/2, rootPos.Y - height/2)
+                    else -- FullBody
+                        -- 全身ボックス
+                        local torso = player.Character:FindFirstChild("Torso") or player.Character:FindFirstChild("UpperTorso")
+                        local leftLeg = player.Character:FindFirstChild("Left Leg") or player.Character:FindFirstChild("LeftLowerLeg")
+                        local rightLeg = player.Character:FindFirstChild("Right Leg") or player.Character:FindFirstChild("RightLowerLeg")
+                        
+                        if torso and leftLeg and rightLeg then
+                            local torsoPos = Camera:WorldToViewportPoint(torso.Position)
+                            local leftLegPos = Camera:WorldToViewportPoint(leftLeg.Position)
+                            local rightLegPos = Camera:WorldToViewportPoint(rightLeg.Position)
+                            
+                            local minX = math.min(torsoPos.X, leftLegPos.X, rightLegPos.X)
+                            local maxX = math.max(torsoPos.X, leftLegPos.X, rightLegPos.X)
+                            local minY = math.min(torsoPos.Y, leftLegPos.Y, rightLegPos.Y)
+                            local maxY = math.max(torsoPos.Y, leftLegPos.Y, rightLegPos.Y)
+                            
+                            box.Size = Vector2.new(maxX - minX + 20, maxY - minY + 20)
+                            box.Position = Vector2.new(minX - 10, minY - 10)
+                        end
+                    end
                     
-                    box.Size = Vector2.new(width, height)
-                    box.Position = Vector2.new(rootPos.X - width/2, rootPos.Y - height/2)
                     box.Visible = true
                 else
                     box.Visible = false
@@ -753,15 +844,23 @@ local function CreateBoxESP(player)
     boxESPConnections[player] = {box = box, connection = connection}
 end
 
--- Traceを作成する関数（超薄い赤色）
+-- Traceを作成する関数
 local function CreateTrace(player)
     if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
     
-    local trace = Drawing.new("Line")
+    local trace
+    if Settings.TraceShape == "Circle" then
+        trace = Drawing.new("Circle")
+    elseif Settings.TraceShape == "Square" then
+        trace = Drawing.new("Square")
+    else
+        trace = Drawing.new("Line")
+    end
+    
     trace.Visible = false
     trace.Color = Settings.TraceColor
     trace.Thickness = Settings.TraceThickness
-    trace.Transparency = 0.1 -- 超薄い
+    trace.Transparency = Settings.TraceTransparency
     
     local connection
     connection = RunService.RenderStepped:Connect(function()
@@ -772,13 +871,24 @@ local function CreateTrace(player)
         
         trace.Thickness = Settings.TraceThickness
         trace.Color = Settings.TraceColor
+        trace.Transparency = Settings.TraceTransparency
         
         if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
             local pos, onScreen = Camera:WorldToViewportPoint(player.Character.HumanoidRootPart.Position)
             if onScreen then
-                trace.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                trace.To = Vector2.new(pos.X, pos.Y)
-                trace.Visible = true
+                if Settings.TraceShape == "Circle" then
+                    trace.Position = Vector2.new(pos.X, pos.Y)
+                    trace.Radius = Settings.TraceSize * 10
+                    trace.Visible = true
+                elseif Settings.TraceShape == "Square" then
+                    trace.Size = Vector2.new(Settings.TraceSize * 20, Settings.TraceSize * 20)
+                    trace.Position = Vector2.new(pos.X - Settings.TraceSize * 10, pos.Y - Settings.TraceSize * 10)
+                    trace.Visible = true
+                else -- Line
+                    trace.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                    trace.To = Vector2.new(pos.X, pos.Y)
+                    trace.Visible = true
+                end
             else
                 trace.Visible = false
             end
@@ -871,29 +981,34 @@ local function SetManualTarget(playerName)
 end
 
 -- メインタブの機能
+MainTab:CreateSection("🔒 固定システム")
+
 local LockToggle = MainTab:CreateToggle({
-    Name = "🔒 ヘッドロック メイン",
+    Name = "固定 メイン",
     CurrentValue = false,
     Flag = "HeadLockToggle",
     Callback = function(Value)
         Settings.LockEnabled = Value
         if Value then
-            Notify("✅ 有効化", "ヘッドロックシステムが有効になりました", 2)
+            Notify("✅ 有効化", "固定システムが有効になりました", 2)
         else
-            Notify("❌ 無効化", "ヘッドロックシステムが無効になりました", 2)
+            Notify("❌ 無効化", "固定システムが無効になりました", 2)
             ResetLock()
         end
     end,
 })
 
 MainTab:CreateButton({
-    Name = "🔄 ロックリセット",
+    Name = "🔄 固定リセット",
     Callback = function()
         ResetLock()
     end,
 })
 
 MainTab:CreateSection("🎯 ターゲット設定")
+
+-- プレイヤーリスト表示用ラベル
+local playerListLabel = MainTab:CreateLabel("サーバープレイヤーリスト: 読み込み中...")
 
 playerDropdown = MainTab:CreateDropdown({
     Name = "ターゲットプレイヤー選択",
@@ -928,6 +1043,33 @@ MainTab:CreateInput({
     end,
 })
 
+-- プレイヤーリスト更新
+task.spawn(function()
+    while task.wait(2) do
+        local playerNames = GetPlayerList()
+        local playerListText = "サーバープレイヤーリスト:\n"
+        
+        if #playerNames > 0 then
+            for i, name in ipairs(playerNames) do
+                playerListText = playerListText .. i .. ". " .. name .. "\n"
+            end
+        else
+            playerListText = playerListText .. "プレイヤーがいません"
+        end
+        
+        playerListLabel:SetText(playerListText)
+        
+        -- ドロップダウンも更新
+        if playerDropdown then
+            local currentList = {"なし"}
+            for _, name in ipairs(playerNames) do
+                table.insert(currentList, name)
+            end
+            playerDropdown:Refresh(currentList, true)
+        end
+    end
+end)
+
 MainTab:CreateSection("👁️ ESPシステム")
 
 local NameESPToggle = MainTab:CreateToggle({
@@ -958,7 +1100,7 @@ local BoxESPToggle = MainTab:CreateToggle({
 })
 
 local TraceToggle = MainTab:CreateToggle({
-    Name = "🔴 トレース（超薄赤線）",
+    Name = "🔴 トレース",
     CurrentValue = false,
     Flag = "TraceToggle",
     Callback = function(Value)
@@ -969,7 +1111,16 @@ local TraceToggle = MainTab:CreateToggle({
 -- 設定タブ
 SettingsTab:CreateSection("📏 ロック距離設定")
 
-local LockDistanceSlider = SettingsTab:CreateSlider({
+local LockDistanceToggle = SettingsTab:CreateToggle({
+    Name = "全体距離を有効化",
+    CurrentValue = false,
+    Flag = "LockDistanceToggle",
+    Callback = function(Value)
+        Settings.LockDistanceEnabled = Value
+    end,
+})
+
+SettingsTab:CreateSlider({
     Name = "全体距離（スタッド）",
     Range = {1, 100},
     Increment = 1,
@@ -980,7 +1131,28 @@ local LockDistanceSlider = SettingsTab:CreateSlider({
     end,
 })
 
-local LockDistanceFrontSlider = SettingsTab:CreateSlider({
+SettingsTab:CreateInput({
+    Name = "全体距離（直接入力）",
+    PlaceholderText = "数値を入力",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        local value = tonumber(Text)
+        if value and value >= 1 and value <= 100 then
+            Settings.LockDistance = value
+        end
+    end,
+})
+
+local LockDistanceFrontToggle = SettingsTab:CreateToggle({
+    Name = "前方距離を有効化",
+    CurrentValue = false,
+    Flag = "LockDistanceFrontToggle",
+    Callback = function(Value)
+        Settings.LockDistanceFrontEnabled = Value
+    end,
+})
+
+SettingsTab:CreateSlider({
     Name = "前方距離（スタッド）",
     Range = {1, 50},
     Increment = 1,
@@ -991,7 +1163,28 @@ local LockDistanceFrontSlider = SettingsTab:CreateSlider({
     end,
 })
 
-local LockDistanceBackSlider = SettingsTab:CreateSlider({
+SettingsTab:CreateInput({
+    Name = "前方距離（直接入力）",
+    PlaceholderText = "数値を入力",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        local value = tonumber(Text)
+        if value and value >= 1 and value <= 50 then
+            Settings.LockDistanceFront = value
+        end
+    end,
+})
+
+local LockDistanceBackToggle = SettingsTab:CreateToggle({
+    Name = "後方距離を有効化",
+    CurrentValue = false,
+    Flag = "LockDistanceBackToggle",
+    Callback = function(Value)
+        Settings.LockDistanceBackEnabled = Value
+    end,
+})
+
+SettingsTab:CreateSlider({
     Name = "後方距離（スタッド）",
     Range = {1, 50},
     Increment = 1,
@@ -1002,7 +1195,28 @@ local LockDistanceBackSlider = SettingsTab:CreateSlider({
     end,
 })
 
-local LockDistanceLeftSlider = SettingsTab:CreateSlider({
+SettingsTab:CreateInput({
+    Name = "後方距離（直接入力）",
+    PlaceholderText = "数値を入力",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        local value = tonumber(Text)
+        if value and value >= 1 and value <= 50 then
+            Settings.LockDistanceBack = value
+        end
+    end,
+})
+
+local LockDistanceLeftToggle = SettingsTab:CreateToggle({
+    Name = "左方向距離を有効化",
+    CurrentValue = false,
+    Flag = "LockDistanceLeftToggle",
+    Callback = function(Value)
+        Settings.LockDistanceLeftEnabled = Value
+    end,
+})
+
+SettingsTab:CreateSlider({
     Name = "左方向距離（スタッド）",
     Range = {1, 50},
     Increment = 1,
@@ -1013,7 +1227,28 @@ local LockDistanceLeftSlider = SettingsTab:CreateSlider({
     end,
 })
 
-local LockDistanceRightSlider = SettingsTab:CreateSlider({
+SettingsTab:CreateInput({
+    Name = "左方向距離（直接入力）",
+    PlaceholderText = "数値を入力",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        local value = tonumber(Text)
+        if value and value >= 1 and value <= 50 then
+            Settings.LockDistanceLeft = value
+        end
+    end,
+})
+
+local LockDistanceRightToggle = SettingsTab:CreateToggle({
+    Name = "右方向距離を有効化",
+    CurrentValue = false,
+    Flag = "LockDistanceRightToggle",
+    Callback = function(Value)
+        Settings.LockDistanceRightEnabled = Value
+    end,
+})
+
+SettingsTab:CreateSlider({
     Name = "右方向距離（スタッド）",
     Range = {1, 50},
     Increment = 1,
@@ -1021,6 +1256,18 @@ local LockDistanceRightSlider = SettingsTab:CreateSlider({
     Flag = "LockDistanceRightSlider",
     Callback = function(Value)
         Settings.LockDistanceRight = Value
+    end,
+})
+
+SettingsTab:CreateInput({
+    Name = "右方向距離（直接入力）",
+    PlaceholderText = "数値を入力",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        local value = tonumber(Text)
+        if value and value >= 1 and value <= 50 then
+            Settings.LockDistanceRight = value
+        end
     end,
 })
 
@@ -1038,7 +1285,7 @@ local WallCheckToggle = SettingsTab:CreateToggle({
     end,
 })
 
-local WallCheckDelaySlider = SettingsTab:CreateSlider({
+SettingsTab:CreateSlider({
     Name = "壁判定遅延（秒）",
     Range = {0, 5},
     Increment = 0.1,
@@ -1049,8 +1296,13 @@ local WallCheckDelaySlider = SettingsTab:CreateSlider({
     end,
 })
 
-local LockDurationSlider = SettingsTab:CreateSlider({
-    Name = "ロック持続時間（秒）",
+SettingsTab:CreateParagraph({
+    Title = "壁判定遅延の詳細",
+    Content = "壁がない状態が設定秒数続いた後にロック開始\n0 = 即時ロック\n高い値 = より確実な壁判定"
+})
+
+SettingsTab:CreateSlider({
+    Name = "ロック接続時間（秒）",
     Range = {0.1, 10},
     Increment = 0.1,
     CurrentValue = 0.5,
@@ -1060,7 +1312,7 @@ local LockDurationSlider = SettingsTab:CreateSlider({
     end,
 })
 
-local CooldownSlider = SettingsTab:CreateSlider({
+SettingsTab:CreateSlider({
     Name = "クールダウン時間（秒）",
     Range = {0.1, 10},
     Increment = 0.1,
@@ -1082,14 +1334,26 @@ local SmoothLockToggle = SettingsTab:CreateToggle({
     end,
 })
 
-local SmoothLockSpeedSlider = SettingsTab:CreateSlider({
+SettingsTab:CreateSlider({
     Name = "スムーズ速度",
-    Range = {0.01, 1},
-    Increment = 0.01,
+    Range = {0.001, 1},
+    Increment = 0.001,
     CurrentValue = 0.1,
     Flag = "SmoothLockSpeedSlider",
     Callback = function(Value)
         Settings.SmoothLockSpeed = Value
+    end,
+})
+
+SettingsTab:CreateInput({
+    Name = "スムーズ速度（直接入力）",
+    PlaceholderText = "0.001～1",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        local value = tonumber(Text)
+        if value and value >= 0.001 and value <= 1 then
+            Settings.SmoothLockSpeed = value
+        end
     end,
 })
 
@@ -1112,7 +1376,7 @@ local LockPriorityDropdown = SettingsTab:CreateDropdown({
 
 SettingsTab:CreateSection("🔧 トレース設定")
 
-local TraceThicknessSlider = SettingsTab:CreateSlider({
+SettingsTab:CreateSlider({
     Name = "トレースの太さ",
     Range = {1, 10},
     Increment = 1,
@@ -1123,11 +1387,59 @@ local TraceThicknessSlider = SettingsTab:CreateSlider({
     end,
 })
 
+SettingsTab:CreateSlider({
+    Name = "トレースの薄さ",
+    Range = {0, 1},
+    Increment = 0.1,
+    CurrentValue = 0.1,
+    Flag = "TraceTransparencySlider",
+    Callback = function(Value)
+        Settings.TraceTransparency = Value
+    end,
+})
+
+SettingsTab:CreateSlider({
+    Name = "トレースの大きさ",
+    Range = {0.5, 5},
+    Increment = 0.1,
+    CurrentValue = 1,
+    Flag = "TraceSizeSlider",
+    Callback = function(Value)
+        Settings.TraceSize = Value
+    end,
+})
+
+local TraceColorPicker = SettingsTab:CreateColorPicker({
+    Name = "トレースの色",
+    Color = Color3.fromRGB(255, 50, 50),
+    Flag = "TraceColorPicker",
+    Callback = function(Value)
+        Settings.TraceColor = Value
+    end
+})
+
+local TraceShapeDropdown = SettingsTab:CreateDropdown({
+    Name = "トレースの形",
+    Options = {"線", "円", "四角"},
+    CurrentOption = {"線"},
+    MultipleOptions = false,
+    Flag = "TraceShapeDropdown",
+    Callback = function(Option)
+        if Option[1] == "線" then
+            Settings.TraceShape = "Line"
+        elseif Option[1] == "円" then
+            Settings.TraceShape = "Circle"
+        elseif Option[1] == "四角" then
+            Settings.TraceShape = "Square"
+        end
+    end,
+})
+
 SettingsTab:CreateSection("🔔 通知設定")
 
 local NotificationToggle = SettingsTab:CreateToggle({
     Name = "通知表示",
-    CurrentValue = true,
+    CurrentValue = false,
     Flag = "NotificationToggle",
     Callback = function(Value)
         Settings.NotificationEnabled = Value
@@ -1173,12 +1485,168 @@ local ResetOnDeathToggle = SettingsTab:CreateToggle({
     end,
 })
 
+-- ESP設定タブ
+ESPTab:CreateSection("📝 ネームESP設定")
+
+local NameESPFontDropdown = ESPTab:CreateDropdown({
+    Name = "フォント",
+    Options = {"UI", "System", "Monospace", "Legacy", "Arcade", "Fantasy", "SciFi", "Cursive", "Script", "Small", "Medium", "Large"},
+    CurrentOption = {"System"},
+    MultipleOptions = false,
+    Flag = "NameESPFontDropdown",
+    Callback = function(Option)
+        local fontMap = {
+            ["UI"] = 0,
+            ["System"] = 1,
+            ["Monospace"] = 2,
+            ["Legacy"] = 3,
+            ["Arcade"] = 4,
+            ["Fantasy"] = 5,
+            ["SciFi"] = 6,
+            ["Cursive"] = 7,
+            ["Script"] = 8,
+            ["Small"] = 9,
+            ["Medium"] = 10,
+            ["Large"] = 11
+        }
+        Settings.NameESPFont = fontMap[Option[1]] or 2
+    end,
+})
+
+local NameESPColorPicker = ESPTab:CreateColorPicker({
+    Name = "ネームESPの色",
+    Color = Color3.fromRGB(255, 255, 255),
+    Flag = "NameESPColorPicker",
+    Callback = function(Value)
+        Settings.NameESPColor = Value
+    end
+})
+
+ESPTab:CreateSlider({
+    Name = "ネームESPの大きさ",
+    Range = {8, 32},
+    Increment = 1,
+    CurrentValue = 16,
+    Flag = "NameESPSizeSlider",
+    Callback = function(Value)
+        Settings.NameESPSize = Value
+    end,
+})
+
+ESPTab:CreateSlider({
+    Name = "ネームESPの薄さ",
+    Range = {0, 1},
+    Increment = 0.1,
+    CurrentValue = 0,
+    Flag = "NameESPTransparencySlider",
+    Callback = function(Value)
+        Settings.NameESPTransparency = Value
+    end,
+})
+
+local NameESPPositionDropdown = ESPTab:CreateDropdown({
+    Name = "ネームESP表示位置",
+    Options = {"頭の上", "頭に表示"},
+    CurrentOption = {"頭の上"},
+    MultipleOptions = false,
+    Flag = "NameESPPositionDropdown",
+    Callback = function(Option)
+        if Option[1] == "頭の上" then
+            Settings.NameESPPosition = "AboveHead"
+        else
+            Settings.NameESPPosition = "OnHead"
+        end
+    end,
+})
+
+ESPTab:CreateSection("❤️ ヘルスESP設定")
+
+local HealthESPStyleDropdown = ESPTab:CreateDropdown({
+    Name = "ヘルスESPスタイル",
+    Options = {"横型", "縦型"},
+    CurrentOption = {"横型"},
+    MultipleOptions = false,
+    Flag = "HealthESPStyleDropdown",
+    Callback = function(Option)
+        if Option[1] == "横型" then
+            Settings.HealthESPStyle = "Horizontal"
+        else
+            Settings.HealthESPStyle = "Vertical"
+        end
+    end,
+})
+
+local HealthESPColorPicker = ESPTab:CreateColorPicker({
+    Name = "ヘルスESPの色",
+    Color = Color3.fromRGB(0, 255, 0),
+    Flag = "HealthESPColorPicker",
+    Callback = function(Value)
+        Settings.HealthESPColor = Value
+    end
+})
+
+ESPTab:CreateSlider({
+    Name = "ヘルスESPの大きさ",
+    Range = {8, 24},
+    Increment = 1,
+    CurrentValue = 14,
+    Flag = "HealthESPSizeSlider",
+    Callback = function(Value)
+        Settings.HealthESPSize = Value
+    end,
+})
+
+ESPTab:CreateSection("📦 ボックスESP設定")
+
+local BoxESPColorPicker = ESPTab:CreateColorPicker({
+    Name = "ボックスESPの色",
+    Color = Color3.fromRGB(0, 255, 0),
+    Flag = "BoxESPColorPicker",
+    Callback = function(Value)
+        Settings.BoxESPColor = Value
+    end
+})
+
+ESPTab:CreateSlider({
+    Name = "ボックスESPの太さ",
+    Range = {1, 5},
+    Increment = 1,
+    CurrentValue = 1,
+    Flag = "BoxESPThicknessSlider",
+    Callback = function(Value)
+        Settings.BoxESPThickness = Value
+    end,
+})
+
+local BoxESPStyleDropdown = ESPTab:CreateDropdown({
+    Name = "ボックスESPスタイル",
+    Options = {"通常", "全身ボックス"},
+    CurrentOption = {"通常"},
+    MultipleOptions = false,
+    Flag = "BoxESPStyleDropdown",
+    Callback = function(Option)
+        if Option[1] == "通常" then
+            Settings.BoxESPStyle = "Normal"
+        else
+            Settings.BoxESPStyle = "FullBody"
+        end
+    end,
+})
+
 -- 情報タブ
 InfoTab:CreateSection("📊 システム情報")
 
-InfoTab:CreateLabel("現在のターゲット: " .. (currentTarget and currentTarget.Name or "なし"))
-InfoTab:CreateLabel("ロック状態: " .. (isLocking and "🔒 ロック中" or "🔓 未ロック"))
-InfoTab:CreateLabel("壁判定: " .. (Settings.WallCheckEnabled and "有効" or "無効"))
+local currentTargetLabel = InfoTab:CreateLabel("現在のターゲット: " .. (currentTarget and currentTarget.Name or "なし"))
+local lockStatusLabel = InfoTab:CreateLabel("ロック状態: " .. (isLocking and "🔒 ロック中" or "🔓 未ロック"))
+local wallCheckLabel = InfoTab:CreateLabel("壁判定: " .. (Settings.WallCheckEnabled and "有効" or "無効"))
+
+task.spawn(function()
+    while task.wait(1) do
+        currentTargetLabel:SetText("現在のターゲット: " .. (currentTarget and currentTarget.Name or "なし"))
+        lockStatusLabel:SetText("ロック状態: " .. (isLocking and "🔒 ロック中" or "🔓 未ロック"))
+        wallCheckLabel:SetText("壁判定: " .. (Settings.WallCheckEnabled and "有効" or "無効"))
+    end
+end)
 
 InfoTab:CreateSection("📈 ターゲット履歴")
 
@@ -1204,7 +1672,7 @@ InfoTab:CreateSection("ℹ️ 使い方")
 
 InfoTab:CreateParagraph({
     Title = "基本操作",
-    Content = "1. メインタブでヘッドロックを有効化\n2. 設定タブで各種パラメータを調整\n3. 特定のプレイヤーをターゲットにする場合はドロップダウンから選択\n4. リセットボタンでロック状態をクリア"
+    Content = "1. メインタブで固定を有効化\n2. 設定タブで各種パラメータを調整\n3. 特定のプレイヤーをターゲットにする場合はドロップダウンから選択\n4. リセットボタンでロック状態をクリア"
 })
 
 InfoTab:CreateParagraph({
@@ -1214,21 +1682,8 @@ InfoTab:CreateParagraph({
 
 InfoTab:CreateParagraph({
     Title = "ESP機能",
-    Content = "ネームESP: プレイヤー名を表示\nヘルスESP: HPバーと数値を表示\nボックスESP: プレイヤー周囲にボックスを表示\nトレース: プレイヤーへの超薄い赤線"
+    Content = "ネームESP: プレイヤー名を表示\nヘルスESP: HPバーと数値を表示\nボックスESP: プレイヤー周囲にボックスを表示\nトレース: プレイヤーへの視覚的ガイド"
 })
-
--- プレイヤーリストを更新
-task.spawn(function()
-    while task.wait(2) do
-        if playerDropdown then
-            local currentList = {"なし"}
-            for _, name in ipairs(GetPlayerList()) do
-                table.insert(currentList, name)
-            end
-            playerDropdown:Refresh(currentList, true)
-        end
-    end
-end)
 
 -- メインループ
 RunService.RenderStepped:Connect(function()
@@ -1241,7 +1696,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     
     if input.KeyCode == Enum.KeyCode.RightControl then
         Settings.LockEnabled = not Settings.LockEnabled
-        Notify("キーバインド", "ヘッドロック: " .. (Settings.LockEnabled and "有効" or "無効"), 2)
+        Notify("キーバインド", "固定: " .. (Settings.LockEnabled and "有効" or "無効"), 2)
     end
     
     if input.KeyCode == Enum.KeyCode.RightShift then
@@ -1254,8 +1709,8 @@ task.spawn(function()
     task.wait(2)
     SetupAllPlayers()
     CreateLockIndicator()
-    Notify("🎉 Syu_uhub 起動", "強力ヘッドロックシステムが起動しました", 5)
-    Notify("💡 ヒント", "右CtrlキーでロックON/OFF、右Shiftでリセット", 5)
+    Notify("🎉 Syu_uhub 起動", "fling things and people top script が起動しました", 5)
+    Notify("💡 ヒント", "右Ctrlキーで固定ON/OFF、右Shiftでリセット", 5)
 end)
 
 Rayfield:LoadConfiguration()
